@@ -1,5 +1,10 @@
 module SymbolicManipulations
 
-# Write your package code here.
+using SymbolicUtils
+
+export together, fullsimplify
+
+include("together.jl")
+include("fullsimplify.jl")
 
 end
