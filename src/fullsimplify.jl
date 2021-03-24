@@ -69,6 +69,10 @@ full_simplify_trial_rewrites = [
     @rule(sin(~x + ~y) => sin(~x)*cos(~y) + cos(~x)*sin(~y))
     @rule(cos(~x + ~y) => cos(~x)*cos(~y) + -1*sin(~x)*sin(~y))
     @rule(tan(~x + ~y) => (tan(~x) + tan(~y)) / (1 - tan(~x)*tan(~y)))
+
+    # Hyperbolic trig functions
+    @acrule(exp(~x) +  1 => 2 * exp(-1*~x / 2) * cosh(~x / 2))
+    @acrule(exp(~x) + -1 => 2 * exp(-1*~x / 2) * sinh(~x / 2))
 ]
 
 full_simplify_rewriter = TrialRewriter(full_simplify_trial_rewrites, SymbolicUtils.serial_simplifier)
