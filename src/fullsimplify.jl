@@ -1,27 +1,27 @@
-function compute_complexity(m::SymbolicUtils.Mul)
-    complexity = 0
-    for (term, pow) in pairs(m.dict)
-        complexity *= compute_complexity(term)^pow
+function count_ops(x::SymbolicUtils.Mul)
+    ops = x.coeff == 1 ? 0 : 1
+    for (term, pow) in pairs(x.dict)
+        ops += 1 + count_ops(term) + (pow == 1 ? 0 : 1)
     end
-    return complexity
+    return ops - 1 # The for loop overcounts operations by one
 end
-function compute_complexity(a::SymbolicUtils.Add)
-    complexity = 0
-    for (term, pow) in pairs(a.dict)
-        complexity += pow * compute_complexity(term)
+function count_ops(x::SymbolicUtils.Add)
+    ops = x.coeff == 0 ? 0 : 1
+    for (term, mult) in pairs(x.dict)
+        ops += 1 + count_ops(term) + (mult == 1 ? 0 : 1)
     end
-    return complexity
+    return ops - 1 # The for loop overcounts operations by one
 end
-function compute_complexity(t::SymbolicUtils.Term)
-    complexity = 0
-    for a in t.arguments
-        complexity += compute_complexity(a)
+function count_ops(x::SymbolicUtils.Term)
+    ops = 1
+    for a in x.arguments
+        ops += count_ops(a)
     end
-    return 2 * complexity
+    return ops
 end
-compute_complexity(p::SymbolicUtils.Pow) = compute_complexity(p.base)^compute_complexity(p.exp)
-compute_complexity(::SymbolicUtils.Sym) = 1
-compute_complexity(::Int) = 1
+count_ops(x::SymbolicUtils.Pow) = 1 + count_ops(x.base) + count_ops(x.exp)
+count_ops(::SymbolicUtils.Sym) = 0
+count_ops(::Int) = 0
 
 
 struct TrialRewriter
@@ -30,7 +30,7 @@ struct TrialRewriter
     complexity_measure
 
     function TrialRewriter(trial_rewrites, simplify_rewrite,
-            complexity_measure=compute_complexity)
+            complexity_measure=count_ops)
 
         return new(trial_rewrites, simplify_rewrite, complexity_measure)
     end
@@ -44,7 +44,7 @@ function (tr::TrialRewriter)(x)
 
         # y shouldn't ever be able to be nothing, but might as well check.
         if y !== nothing
-            new_complexity = compute_complexity(y)
+            new_complexity = tr.complexity_measure(y)
             if new_complexity < complexity
                 complexity = new_complexity
                 x = y
