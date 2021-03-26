@@ -53,6 +53,7 @@ SymbolicUtils.show_simplified[] = false
         @syms x
 
         @eqtest fullsimplify(cos(2x) + 2sin(x)^2) == 1
+        @eqtest fullsimplify(exp(x) * (exp(x) - 1)^-2) == 1//4*(sinh(1//2 * x))^-2
     end
 
     @testset "integrate" begin
