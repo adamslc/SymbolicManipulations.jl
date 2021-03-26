@@ -11,6 +11,14 @@ macro eqtest(expr)
         :(@test !isequal($(expr.args[2]), $(expr.args[3])))
     end |> esc
 end
+macro eqtest_broken(expr)
+    @assert expr.head == :call && expr.args[1] in [:(==), :(!=)]
+    if expr.args[1] == :(==)
+        :(@test_broken isequal($(expr.args[2]), $(expr.args[3])))
+    else
+        :(@test_broken !isequal($(expr.args[2]), $(expr.args[3])))
+    end |> esc
+end
 SymbolicUtils.show_simplified[] = false
 
 @testset "SymbolicManipulations.jl" begin
@@ -45,5 +53,25 @@ SymbolicUtils.show_simplified[] = false
         @syms x
 
         @eqtest fullsimplify(cos(2x) + 2sin(x)^2) == 1
+    end
+
+    @testset "integrate" begin
+        @syms x y
+
+        @eqtest integrate(x^2, x) == x^3 // 3
+        @eqtest integrate(x^y, x) == x^(y + 1) / (y + 1)
+        @eqtest integrate(y^x, y) == y^(x + 1) / (x + 1)
+
+        @eqtest_broken integrate(sin(x)^2 * cos(x), x) == sin(x)^3 // 3
+        @eqtest_broken integrate((x^2 + x) / sqrt(x), x) == 2//15 * x^(3//2) * (3x + 5)
+        @eqtest_broken integrate(x^4 / (1 - x^2)^(5//2), x) == asin(x) + x//3 * (4x^2 - 3) / (1 - x^2)^(3/2)
+        @eqtest_broken integrate(sec(x)^2 / (1 + sec(x)^2 - 3tan(x)), x) == log(2cos(x) - sin(x)) - log(cos(x) - sin(x))
+        @eqtest_broken integrate((sin(x) + cos(x))^2, x) == x - 1//2 * cos(2x)
+        @eqtest_broken integrate(tan(x) * sec(x)^2, x) == sec(x)^2 // 2
+        @eqtest_broken integrate(sin(x) * cos(x), x) == -1//2 * cos(x)^2
+
+        # SAINT could not solve these:
+        @eqtest_broken integrate(x * sqrt(1 + x), x) == 2//15 * (1 + x)^(3//2) * (3x - 2)
+        @eqtest_broken integrate(cos(sqrt(x)), x) == 2cos(sqrt(x)) + 2sqrt(x)*sin(sqrt(x))
     end
 end
