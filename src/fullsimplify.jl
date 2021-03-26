@@ -71,10 +71,35 @@ full_simplify_trial_rewrites = [
     @rule(tan(~x + ~y) => (tan(~x) + tan(~y)) / (1 - tan(~x)*tan(~y)))
 
     # Hyperbolic trig functions
-    @acrule(exp(~x) +  1 => 2 * exp(-1*~x / 2) * cosh(~x / 2))
-    @acrule(exp(~x) + -1 => 2 * exp(-1*~x / 2) * sinh(~x / 2))
+    @acrule(exp(~x) +  1 => 2 * exp(1//2 * ~x) * cosh(1//2 * ~x))
+    @acrule(exp(~x) + -1 => 2 * exp(1//2 * ~x) * sinh(1//2 * ~x))
 ]
 
-full_simplify_rewriter = TrialRewriter(full_simplify_trial_rewrites, SymbolicUtils.serial_simplifier)
+extra_simplify_rules = [
+    # Exponential rules
+    @rule(exp(~x)^(~y) => exp(~x * ~y))
+    @acrule(exp(~x)*exp(~y) => exp(~x + ~y))
+
+    # Trig rules
+    @rule(cos(-1*~x) => cos(~x))
+    @rule(sin(-1*~x) => -1*sin(~x))
+    @rule(tan(-1*~x) => -1*tan(~x))
+
+]
+extra_rewritter =
+    SymbolicUtils.Postwalk(
+    SymbolicUtils.PassThrough(
+    SymbolicUtils.Chain(extra_simplify_rules)))
+
+# This construction with mutiple Fixpoint rewritters seems terrible for
+# performance. It should be rethought eventually.
+simplify_rewritter =
+    SymbolicUtils.Fixpoint(
+    SymbolicUtils.Chain((extra_rewritter, SymbolicUtils.serial_simplifier)))
+
+full_simplify_rewriter =
+    TrialRewriter(
+        full_simplify_trial_rewrites,
+        simplify_rewritter)
 
 fullsimplify(ex) = simplify(ex, rewriter=full_simplify_rewriter)
