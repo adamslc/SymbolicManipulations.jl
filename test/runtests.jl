@@ -62,6 +62,10 @@ SymbolicUtils.show_simplified[] = false
         @eqtest integrate(x^2, x) == x^3 // 3
         @eqtest integrate(x^y, x) == x^(y + 1) / (y + 1)
         @eqtest integrate(y^x, y) == y^(x + 1) / (x + 1)
+        @eqtest integrate(5x, x) == 5//2 * x^2
+        @eqtest integrate(x + x^2, x) == 1//2 * x^2 + 1//3 * x^3
+        @eqtest integrate((x + x^2) / x, x) == x + 1//2 * x^2
+        @eqtest integrate((x + y)^2, x) == y^2 * x + y * x^2 + 1//3 * x^3
 
         @eqtest_broken integrate(sin(x)^2 * cos(x), x) == sin(x)^3 // 3
         @eqtest_broken integrate((x^2 + x) / sqrt(x), x) == 2//15 * x^(3//2) * (3x + 5)

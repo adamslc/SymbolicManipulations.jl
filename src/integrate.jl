@@ -43,7 +43,7 @@ function _apply_standard_forms(ex, v)
 
         @rule(v^-1 => log(v))
         # Need this extra rule because the next one won't match a linear v
-        @rule(v => 1//2 * v)
+        @rule(v => 1//2 * v^2)
         @rule(v^(~c::is_const_wrt_v) => 1//(~c + 1)*v^(~c + 1))
 
         @acrule(sec(v)*tan(v) => sec(v))
@@ -69,78 +69,140 @@ function _apply_standard_forms(ex, v)
     return nothing
 end
 
-function _factor_constant(ex::SymbolicUtils.Mul, v)
-    ex.coeff == 1 && return nothing
-    return ex.coeff * integrate(@set ex.coeff = 1, v)
-end
-_factor_constant(ex, v) = nothing
+function factor_constant(p)
+    typeof(p.ex) <: SymbolicUtils.Mul || return []
 
-function _decompose(ex::SymbolicUtils.Add, v)
-    int = v*ex.coeff
-    for (term, coeff) in pairs(ex.dict)
-        new_term = integrate(term, v)
-        new_term == nothing && return nothing
-        int += coeff * new_term
+    const_term = p.ex.coeff
+    variable_term = one(p.ex.coeff)
+
+    for (expr, pow) in pairs(p.ex.dict)
+        if is_const(expr, p.v)
+            const_term *= expr^pow
+        else
+            variable_term *= expr^pow
+        end
     end
 
-    return int
-end
-_decompose(ex, v) = nothing
+    const_term === one(p.ex.coeff) && return []
 
-function _linear_sub(ex, v)
+    new_int_prob = IntegrationProblem(variable_term, p.v)
+    func_prob = FunctionProblem(nothing, sol -> const_term * sol, new_int_prob, [p])
+    push!(new_int_prob.parents, func_prob)
+    push!(p.subproblems, func_prob)
+    return [new_int_prob]
+end
+
+function decompose(p)
+    typeof(p.ex) <: SymbolicUtils.Add || return []
+    length(p.ex.dict) + (p.ex.coeff == 0 ? 0 : 1) > 1 || return []
+
+    sum_prob = SummationProblem(nothing, [], 0, [p])
+    push!(p.subproblems, sum_prob)
+    if p.ex.coeff != 0
+        const_prob = IntegrationProblem(p.ex.coeff, p.v, sum_prob)
+        push!(sum_prob.subproblems, const_prob)
+    end
+
+    for (expr, coeff) in pairs(p.ex.dict)
+        int_prob = IntegrationProblem(coeff * expr, p.v, sum_prob)
+        push!(sum_prob.subproblems, int_prob)
+    end
+
+    return sum_prob.subproblems
+end
+
+function linear_sub(p)
     # TODO: I expect that this section will benefit from CSE. I'll leave it
     # alone for now.
-    return nothing
 end
 
 # This doesn't quite have the same function as in the paper because it
 # recursively expands polynomials, instead of only at the top level. Not sure
 # if that's a problem yet...
-function _expand(ex, v)
-    return integrate(SymbolicUtils.polynormalize(ex), v)
+function expand(p)
+    new_ex = SymbolicUtils.polynormalize(p.ex)
+    isequal(new_ex, p.ex) && return []
+
+    new_int_prob = IntegrationProblem(new_ex, p.v, p)
+    push!(p.subproblems, new_int_prob)
+    return [new_int_prob]
 end
 
 # Again, I am not strictly following the paper here because simplify can do
 # much more than just eliminate common factors between a numerator and
 # denominator.
-function _combine_factors(ex, v)
-    return integrate(simplify(ex), v)
+function combine_factors(p)
+    new_ex = simplify(p.ex)
+    isequal(new_ex, p.ex) && return []
+
+    new_int_prob = IntegrationProblem(new_ex, p.v, p)
+    push!(p.subproblems, new_int_prob)
+    return [new_int_prob]
 end
 
-function _divide_polynomials(ex, v)
+function divide_polynomials(p)
     # TODO
-    return nothing
 end
 
-function _half_angle_identities(ex, v)
+function half_angle_identities(p)
     # TODO
-    return nothing
 end
 
 algo_transforms = [
-    _factor_constant
-    _decompose
-    _linear_sub
-    _expand
-    _combine_factors
-    _divide_polynomials
-    _half_angle_identities
+    factor_constant
+    decompose
+    # linear_sub
+    expand
+    combine_factors
+    # divide_polynomials
+    # half_angle_identities
 ]
 
-function _algo_transforms(ex, v)
-    for algo in algo_transforms
-        new_ex = algo(ex, v)
-        new_ex !== nothing && return new_ex
+function add_to_prob_list!(list, prob)
+    # Try for a direction solution before adding to the goal list
+    new_ex = _apply_standard_forms(prob.ex, prob.v)
+    if new_ex !== nothing
+        prob.sol = new_ex
+        propagate_solution!(prob)
+        return
     end
-    return nothing
+
+    enqueue!(list, prob)
+
+    # Check for algorithmic transformations
+    for algo in algo_transforms
+        new_problems = algo(prob)
+        add_to_prob_list!.(Ref(list), new_problems)
+    end
 end
 
 function integrate(ex, v)
-    new_ex = _apply_standard_forms(ex, v)
-    new_ex !== nothing && return new_ex
+    # The temporary goal list holds goals that have not had an immediate
+    # solution attempted yet
+    temp_prob_list = Queue{AbstractProblem}()
+    # If a goal from temp_prob_list does not have an immediate solution, then
+    # it's character is computed, and it is examined for possible heuristic
+    # transformations. Each possible heuristic transformation is a new goal,
+    # and all of these goals are sorted into the heuristic_goal_list so that the
+    # goals that are most likely to have a solution are considered first.
+    heuristic_prob_list = PriorityQueue{AbstractProblem, Int}()
 
-    new_ex = _algo_transforms(ex, v)
-    new_ex !== nothing && return new_ex
+    # Create a IntegrationProblem object and add it to the goal list
+    initial_prob = IntegrationProblem(ex, v)
+    add_to_prob_list!(temp_prob_list, initial_prob)
 
-    return nothing
+    # TODO: I should track resource usage here too.
+    while true
+        is_solved(initial_prob) && return initial_prob.sol
+
+        # Move problems from temp_prob_list to heuristic_prob_list
+
+        # If no heuristic problems remain, then we failed to solve the integral
+        isempty(heuristic_prob_list) && return nothing
+
+        # Take the cheapest problem from the heuristic_prob_list
+        current_goal = dequeue!(heuristic_prob_list)
+    end
+
+    return initial_prob.sol
 end

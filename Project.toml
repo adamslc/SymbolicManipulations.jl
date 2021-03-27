@@ -4,6 +4,7 @@ authors = ["Luke Adams <luke@lukeclydeadams.com> and contributors"]
 version = "0.1.0"
 
 [deps]
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Setfield = "efcf1570-3423-57d1-acb7-fd33fddbac46"
 SymbolicUtils = "d1185830-fcd6-423d-90d6-eec64667417b"
 
