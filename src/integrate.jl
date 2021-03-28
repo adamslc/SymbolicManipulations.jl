@@ -31,8 +31,8 @@ function Integral(integrand, variable)
         nothing)
 end
 
-function isless(a::Integral, b::Integral)
-    return isless(a.integrand, b.integrand)
+function Base.isless(a::Integral, b::Integral)
+    return SymbolicUtils.:<ₑ(a.integrand, b.integrand)
 end
 
 function Base.show(io::IO, i::Integral)
