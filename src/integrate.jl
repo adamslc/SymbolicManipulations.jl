@@ -1,5 +1,48 @@
 # Procedure derived from James Slagle's MIT Ph.D. Thesis
 
+struct Integral{I <: SymbolicUtils.Symbolic, T} <: SymbolicUtils.Symbolic{T}
+    integrand::I
+    variable::SymbolicUtils.Sym
+    limits::Union{NTuple{2, T}, Nothing}
+    value::Ref{Union{SymbolicUtils.Symbolic, Nothing}}
+    equivalent_forms::Vector{SymbolicUtils.Symbolic}
+    ef_integrals::Vector{Vector{Integral}}
+    parents::Vector{Integral}
+    charater
+end
+
+isintegral(i::Integral) = true
+isintegral(x) = false
+
+issolved(i::Integral) = i.value !== nothing
+
+function isneeded(i::Integral)
+    issolved(i) && return false
+    length(i.parents) == 0 && return true
+    return all(isneeded.(i.parents))
+end
+
+function check_solution!(i::Integral)
+    for (n, form_integrals) in enumerate(i.ef_integrals)
+        solved = all(issolved.(form_integrals))
+
+        r = @rule(~i::isintegral => (~i).value)
+        sub = SymbolicUtils.Postwalk(SymbolicUtils.PassThrough(r))
+
+        set_solution!(i, sub(i.equivalent_forms[i]))
+    end
+end
+
+function set_solution!(i::Integral, solution)
+    i.value[] = solution
+
+    for parent in i.parents
+        check_solution!(parent)
+    end
+
+    return solution
+end
+
 # Unneeded after SymbolicUtils PR is merged and a new version is tagged
 import Base: //
 //(a::Union{SymbolicUtils.Symbolic, Number}, b::SymbolicUtils.Symbolic) = a / b
@@ -10,7 +53,6 @@ is_const(ex::SymbolicUtils.Mul, var::SymbolicUtils.Sym) = all(is_const.(keys(ex.
 is_const(ex::SymbolicUtils.Add, var::SymbolicUtils.Sym) = all(is_const.(keys(ex.dict), Ref(var)))
 is_const(ex::SymbolicUtils.Sym, var::SymbolicUtils.Sym) = ex !== var
 is_const(::Number, var::SymbolicUtils.Sym) = true
-
 
 function _apply_standard_forms(ex, v)
     is_const_wrt_v(ex) = is_const(ex, v)
