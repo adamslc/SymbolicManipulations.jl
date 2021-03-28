@@ -1,20 +1,49 @@
 # Procedure derived from James Slagle's MIT Ph.D. Thesis
 
-struct Integral{I <: SymbolicUtils.Symbolic, T} <: SymbolicUtils.Symbolic{T}
+struct Integral{I <: Union{SymbolicUtils.Symbolic, Number}, T} <: SymbolicUtils.Symbolic{T}
+# struct Integral{I <: SymbolicUtils.Symbolic, T} <: SymbolicUtils.Symbolic{T}
     integrand::I
     variable::SymbolicUtils.Sym
+    antiderivative::Ref{Union{SymbolicUtils.Symbolic, Nothing}}
+
+    # Not currently used for anything, but will eventually support definite integrals.
     limits::Union{NTuple{2, T}, Nothing}
     value::Ref{Union{SymbolicUtils.Symbolic, Nothing}}
+
     equivalent_forms::Vector{SymbolicUtils.Symbolic}
     ef_integrals::Vector{Vector{Integral}}
     parents::Vector{Integral}
+
     charater
 end
+
+function Integral(integrand, variable)
+
+    return Integral{typeof(integrand), Float64}(
+        integrand,
+        variable,
+        Ref{Union{SymbolicUtils.Symbolic, Nothing}}(nothing),
+        nothing,
+        Ref{Union{SymbolicUtils.Symbolic, Nothing}}(nothing),
+        SymbolicUtils.Symbolic[],
+        Vector{Integral}[],
+        Integral[],
+        nothing)
+end
+
+function isless(a::Integral, b::Integral)
+    return isless(a.integrand, b.integrand)
+end
+
+function Base.show(io::IO, i::Integral)
+    print(io, "Integral(", i.integrand, ", ", i.variable, ")")
+end
+
 
 isintegral(i::Integral) = true
 isintegral(x) = false
 
-issolved(i::Integral) = i.value !== nothing
+issolved(i::Integral) = i.antiderivative[] !== nothing
 
 function isneeded(i::Integral)
     issolved(i) && return false
@@ -24,17 +53,18 @@ end
 
 function check_solution!(i::Integral)
     for (n, form_integrals) in enumerate(i.ef_integrals)
-        solved = all(issolved.(form_integrals))
+        all(issolved, form_integrals) || continue
 
-        r = @rule(~i::isintegral => (~i).value)
+        r = @rule(~i::isintegral => (~i).antiderivative[])
         sub = SymbolicUtils.Postwalk(SymbolicUtils.PassThrough(r))
 
-        set_solution!(i, sub(i.equivalent_forms[i]))
+        antiderivative = sub(i.equivalent_forms[n])
+        set_solution!(i, antiderivative)
     end
 end
 
 function set_solution!(i::Integral, solution)
-    i.value[] = solution
+    i.antiderivative[] = solution
 
     for parent in i.parents
         check_solution!(parent)
@@ -111,46 +141,54 @@ function _apply_standard_forms(ex, v)
     return nothing
 end
 
-function factor_constant(p)
-    typeof(p.ex) <: SymbolicUtils.Mul || return []
+function factor_constant(i)
+    typeof(i.integrand) <: SymbolicUtils.Mul || return []
 
-    const_term = p.ex.coeff
-    variable_term = one(p.ex.coeff)
+    const_term = i.integrand.coeff
+    variable_term = one(i.integrand.coeff)
 
-    for (expr, pow) in pairs(p.ex.dict)
-        if is_const(expr, p.v)
+    for (expr, pow) in pairs(i.integrand.dict)
+        if is_const(expr, i.variable)
             const_term *= expr^pow
         else
             variable_term *= expr^pow
         end
     end
 
-    const_term === one(p.ex.coeff) && return []
+    const_term === one(i.integrand.coeff) && return []
 
-    new_int_prob = IntegrationProblem(variable_term, p.v)
-    func_prob = FunctionProblem(nothing, sol -> const_term * sol, new_int_prob, [p])
-    push!(new_int_prob.parents, func_prob)
-    push!(p.subproblems, func_prob)
-    return [new_int_prob]
+    new_integral = Integral(variable_term, i.variable)
+    push!(i.equivalent_forms, const_term * new_integral)
+    push!(i.ef_integrals, [new_integral])
+    push!(new_integral.parents, i)
+
+    return [new_integral]
 end
 
-function decompose(p)
-    typeof(p.ex) <: SymbolicUtils.Add || return []
-    length(p.ex.dict) + (p.ex.coeff == 0 ? 0 : 1) > 1 || return []
+function decompose(i)
+    typeof(i.integrand) <: SymbolicUtils.Add || return []
+    length(i.integrand.dict) + (i.integrand.coeff == 0 ? 0 : 1) > 1 || return []
 
-    sum_prob = SummationProblem(nothing, [], 0, [p])
-    push!(p.subproblems, sum_prob)
-    if p.ex.coeff != 0
-        const_prob = IntegrationProblem(p.ex.coeff, p.v, sum_prob)
-        push!(sum_prob.subproblems, const_prob)
+    integrals = Integral[]
+    integral_sum = zero(i.integrand.coeff)
+    if i.integrand.coeff != 0
+        const_int = Integral(i.integrand.coeff, i.variable)
+        push!(const_int.parents, i)
+        push!(integrals, const_int)
+        integral_sum += const_int
     end
 
-    for (expr, coeff) in pairs(p.ex.dict)
-        int_prob = IntegrationProblem(coeff * expr, p.v, sum_prob)
-        push!(sum_prob.subproblems, int_prob)
+    for (expr, coeff) in pairs(i.integrand.dict)
+        int = Integral(coeff * expr, i.variable)
+        push!(int.parents, i)
+        push!(integrals, int)
+        integral_sum += int
     end
 
-    return sum_prob.subproblems
+    push!(i.equivalent_forms, integral_sum)
+    push!(i.ef_integrals, integrals)
+
+    return integrals
 end
 
 function linear_sub(p)
@@ -161,25 +199,29 @@ end
 # This doesn't quite have the same function as in the paper because it
 # recursively expands polynomials, instead of only at the top level. Not sure
 # if that's a problem yet...
-function expand(p)
-    new_ex = SymbolicUtils.polynormalize(p.ex)
-    isequal(new_ex, p.ex) && return []
+function expand(i)
+    new_integrand = SymbolicUtils.polynormalize(i.integrand)
+    isequal(new_integrand, i.integrand) && return []
 
-    new_int_prob = IntegrationProblem(new_ex, p.v, p)
-    push!(p.subproblems, new_int_prob)
-    return [new_int_prob]
+    new_integral = Integral(new_integrand, i.variable)
+    push!(new_integral.parents, i)
+    push!(i.equivalent_forms, new_integral)
+    push!(i.ef_integrals, [new_integral])
+    return [new_integral]
 end
 
 # Again, I am not strictly following the paper here because simplify can do
 # much more than just eliminate common factors between a numerator and
 # denominator.
-function combine_factors(p)
-    new_ex = simplify(p.ex)
-    isequal(new_ex, p.ex) && return []
+function combine_factors(i)
+    new_integrand = simplify(i.integrand)
+    isequal(new_integrand, i.integrand) && return []
 
-    new_int_prob = IntegrationProblem(new_ex, p.v, p)
-    push!(p.subproblems, new_int_prob)
-    return [new_int_prob]
+    new_integral = Integral(new_integrand, i.variable)
+    push!(new_integral.parents, i)
+    push!(i.equivalent_forms, new_integral)
+    push!(i.ef_integrals, [new_integral])
+    return [new_integral]
 end
 
 function divide_polynomials(p)
@@ -200,51 +242,47 @@ algo_transforms = [
     # half_angle_identities
 ]
 
-function add_to_prob_list!(list, prob)
+function solve_or_add_to_list!(list, integral)
     # Try for a direction solution before adding to the goal list
-    new_ex = _apply_standard_forms(prob.ex, prob.v)
+    new_ex = _apply_standard_forms(integral.integrand, integral.variable)
     if new_ex !== nothing
-        prob.sol = new_ex
-        propagate_solution!(prob)
+        set_solution!(integral, new_ex)
         return
     end
 
-    enqueue!(list, prob)
+    enqueue!(list, integral)
 
     # Check for algorithmic transformations
     for algo in algo_transforms
-        new_problems = algo(prob)
-        add_to_prob_list!.(Ref(list), new_problems)
+        new_integrals = algo(integral)
+        solve_or_add_to_list!.(Ref(list), new_integrals)
     end
 end
 
-function integrate(ex, v)
-    # The temporary goal list holds goals that have not had an immediate
-    # solution attempted yet
-    temp_prob_list = Queue{AbstractProblem}()
-    # If a goal from temp_prob_list does not have an immediate solution, then
-    # it's character is computed, and it is examined for possible heuristic
-    # transformations. Each possible heuristic transformation is a new goal,
-    # and all of these goals are sorted into the heuristic_goal_list so that the
-    # goals that are most likely to have a solution are considered first.
-    heuristic_prob_list = PriorityQueue{AbstractProblem, Int}()
+function solve!(initial_integral::Integral)
+    temp_list = Queue{Integral}()
+    heuristic_list = PriorityQueue{Integral, Int}()
 
-    # Create a IntegrationProblem object and add it to the goal list
-    initial_prob = IntegrationProblem(ex, v)
-    add_to_prob_list!(temp_prob_list, initial_prob)
+    solve_or_add_to_list!(temp_list, initial_integral)
 
     # TODO: I should track resource usage here too.
     while true
-        is_solved(initial_prob) && return initial_prob.sol
+        issolved(initial_integral) && return true
 
-        # Move problems from temp_prob_list to heuristic_prob_list
+        # Move problems from temp_list to heuristic_list
 
         # If no heuristic problems remain, then we failed to solve the integral
-        isempty(heuristic_prob_list) && return nothing
+        isempty(heuristic_list) && return false
 
-        # Take the cheapest problem from the heuristic_prob_list
-        current_goal = dequeue!(heuristic_prob_list)
+        # Take the cheapest problem from the heuristic_list
+        current_goal = dequeue!(heuristic_list)
     end
 
-    return initial_prob.sol
+    return issolved(initial_integral)
+end
+
+function integrate(ex, v)
+    integral = Integral(ex, v)
+    solve!(integral)
+    return integral.antiderivative[]
 end
