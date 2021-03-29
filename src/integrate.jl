@@ -73,11 +73,6 @@ function set_solution!(i::Integral, solution)
     return solution
 end
 
-# Unneeded after SymbolicUtils PR is merged and a new version is tagged
-import Base: //
-//(a::Union{SymbolicUtils.Symbolic, Number}, b::SymbolicUtils.Symbolic) = a / b
-//(a::SymbolicUtils.Symbolic, b::T) where {T <: Number} = (one(T) // b) * a
-
 is_const(ex::SymbolicUtils.Pow, var::SymbolicUtils.Sym) = is_const(ex.base, var) && is_const(ex.exp, var)
 is_const(ex::SymbolicUtils.Mul, var::SymbolicUtils.Sym) = all(is_const.(keys(ex.dict), Ref(var)))
 is_const(ex::SymbolicUtils.Add, var::SymbolicUtils.Sym) = all(is_const.(keys(ex.dict), Ref(var)))
