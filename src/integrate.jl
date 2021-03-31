@@ -1,4 +1,8 @@
 # Procedure derived from James Slagle's MIT Ph.D. Thesis
+#
+# ------------------------------------------------------------------------------
+# Integral struct
+# ------------------------------------------------------------------------------
 
 struct Integral{I <: Union{SymbolicUtils.Symbolic, Number}, T} <: SymbolicUtils.Symbolic{T}
 # struct Integral{I <: SymbolicUtils.Symbolic, T} <: SymbolicUtils.Symbolic{T}
@@ -39,7 +43,6 @@ function Base.show(io::IO, i::Integral)
     print(io, "Integral(", i.integrand, ", ", i.variable, ")")
 end
 
-
 isintegral(i::Integral) = true
 isintegral(x) = false
 
@@ -78,6 +81,10 @@ is_const(ex::SymbolicUtils.Mul, var::SymbolicUtils.Sym) = all(is_const.(keys(ex.
 is_const(ex::SymbolicUtils.Add, var::SymbolicUtils.Sym) = all(is_const.(keys(ex.dict), Ref(var)))
 is_const(ex::SymbolicUtils.Sym, var::SymbolicUtils.Sym) = ex !== var
 is_const(::Number, var::SymbolicUtils.Sym) = true
+
+# ------------------------------------------------------------------------------
+# Standard forms
+# ------------------------------------------------------------------------------
 
 function _apply_standard_forms(ex, v)
     is_const_wrt_v(ex) = is_const(ex, v)
@@ -135,6 +142,10 @@ function _apply_standard_forms(ex, v)
 
     return nothing
 end
+#
+# ------------------------------------------------------------------------------
+# Algorithmic transformations
+# ------------------------------------------------------------------------------
 
 function factor_constant(i)
     typeof(i.integrand) <: SymbolicUtils.Mul || return []
@@ -236,6 +247,15 @@ algo_transforms = [
     # divide_polynomials
     # half_angle_identities
 ]
+
+# ------------------------------------------------------------------------------
+# Heuristic transformations
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+# Integral solver
+# ------------------------------------------------------------------------------
 
 function solve_or_add_to_list!(list, integral)
     # Try for a direction solution before adding to the goal list
