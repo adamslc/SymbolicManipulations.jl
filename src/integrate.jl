@@ -265,6 +265,11 @@ function solve_or_add_to_list!(list, integral)
         return
     end
 
+    # I am deviating from SAINT by adding the integral to the list without
+    # checking if an algorithmic tranformation is applicable. I expect that
+    # this will be fine because the algorithmic transformations will probably
+    # reduce the complexity of the integral, and so they will be considered
+    # first.
     enqueue!(list, integral)
 
     # Check for algorithmic transformations
