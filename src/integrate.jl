@@ -18,22 +18,35 @@ struct Integral{I <: Union{SymbolicUtils.Symbolic, Number}, T} <: SymbolicUtils.
     ef_integrals::Vector{Vector{Integral}}
     parents::Vector{Integral}
 
-    charater
+    # These define the "character" of the integral. They are not evaluated
+    # immediately for performance, but the evaluation must be done before the
+    # goal is placed into the heuristic list.
+    depth::Int
+    size::Int
+    rational::Bool
+    algebraic::Bool
+    exponent_base::Union{Number, SymbolicUtils.Symbolic, Nothing}
+    rat_sin_cos::Bool
+    elf_sin_cos::Bool
+    elf_sec_tan::Bool
+    elf_csc_cot::Bool
+    elf_trig::Bool
+    partial::Bool
+
+    function Integral(integrand, variable)
+
+        return new{typeof(integrand), Float64}(
+            integrand,
+            variable,
+            Ref{Union{SymbolicUtils.Symbolic, Nothing}}(nothing),
+            nothing,
+            Ref{Union{SymbolicUtils.Symbolic, Nothing}}(nothing),
+            SymbolicUtils.Symbolic[],
+            Vector{Integral}[],
+            Integral[])
+    end
 end
 
-function Integral(integrand, variable)
-
-    return Integral{typeof(integrand), Float64}(
-        integrand,
-        variable,
-        Ref{Union{SymbolicUtils.Symbolic, Nothing}}(nothing),
-        nothing,
-        Ref{Union{SymbolicUtils.Symbolic, Nothing}}(nothing),
-        SymbolicUtils.Symbolic[],
-        Vector{Integral}[],
-        Integral[],
-        nothing)
-end
 
 function Base.isless(a::Integral, b::Integral)
     return SymbolicUtils.:<ₑ(a.integrand, b.integrand)
@@ -74,6 +87,10 @@ function set_solution!(i::Integral, solution)
     end
 
     return solution
+end
+
+function compute_character(i::Integral)
+    return
 end
 
 # Checks if an expression contains variable var
