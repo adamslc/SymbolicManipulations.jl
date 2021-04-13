@@ -232,8 +232,8 @@ end
 # This doesn't quite have the same function as in the paper because it
 # recursively expands polynomials, instead of only at the top level. Not sure
 # if that's a problem yet...
-function expand(i)
-    new_integrand = SymbolicUtils.polynormalize(i.integrand)
+function expand_transform(i::Integral)
+    new_integrand = expand(i.integrand)
     isequal(new_integrand, i.integrand) && return []
 
     new_integral = Integral(new_integrand, i.variable)
@@ -269,7 +269,7 @@ algo_transforms = [
     factor_constant
     decompose
     # linear_sub
-    expand
+    expand_transform
     combine_factors
     # divide_polynomials
     # half_angle_identities
